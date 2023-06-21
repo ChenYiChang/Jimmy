@@ -1,0 +1,104 @@
+import cv2
+import numpy as np
+from skimage.morphology import medial_axis
+from skimage import img_as_ubyte
+import matplotlib.pyplot as plt
+from skimage import data, color, morphology
+import math
+
+
+def endpoint(gap_img):
+    endpoints = []
+    for i in range(gap_img.shape[0]):
+        for j in range(gap_img.shape[1]):
+            px = gap_img[i, j]
+            if px == 255 and i < im.shape[0]-1 and j < im.shape[1]-1 and i > 1 and j > 1:
+                pxl1 = gap_img[i-1, j-1] / 255
+                pxl2 = gap_img[i-1, j] / 255
+                pxl3 = gap_img[i-1, j+1] / 255
+                pxl4 = gap_img[i, j-1] / 255
+                pxl5 = gap_img[i, j+1] / 255
+                pxl6 = gap_img[i+1, j-1] / 255
+                pxl7 = gap_img[i+1, j] / 255
+                pxl8 = gap_img[i+1, j+1] / 255
+                total = pxl1+pxl2+pxl3+pxl4+pxl5+pxl6+pxl7+pxl8
+                if total == 1.0:
+                    ep = [i, j]
+                    endpoints.append(ep)
+    return (endpoints)
+
+
+def simplelength(endp):
+    if len(endp) == 2:
+        ep1 = [endp[0][1], endp[0][0]]
+        ep2 = [endp[1][1], endp[1][0]]
+        return (ep1, ep2)
+    if len(endp) > 2:
+        ep1 = [endp[0][1], endp[0][0]]
+        ep2 = [endp[0][1], endp[0][0]]
+        l1 = abs(v[0][0]-endp[0][1])
+        w1 = abs(v[0][1]-endp[0][0])
+        summ1 = l1+w1
+        for i in range(len(endp)):
+            l = abs(v[0][0]-endp[i][1])
+            w = abs(v[0][1]-endp[i][0])
+            summ = l+w
+            if summ < summ1:
+                summ1 = summ
+                ep1 = [endp[i][1], endp[i][0]]
+        for i in range(len(endp)):
+            if [endp[i][1], endp[i][0]] != ep1:
+                l = abs(v[0][0]-endp[i][1])
+                w = abs(v[0][1]-endp[i][0])
+                summ = l+w
+                if abs(summ1-summ) < 15:
+                    ep2 = [endp[i][1], endp[i][0]]
+
+        return (ep1, ep2)
+
+
+# get crack
+im = cv2.imread("mask05.png", cv2.IMREAD_GRAYSCALE)
+rgb = cv2.cvtColor(im, cv2.COLOR_GRAY2RGB)  # rgb just for demo purpose
+_, crack = cv2.threshold(im, 127, 255, cv2.THRESH_BINARY)
+
+# get medial axis
+medial = cv2.imread("center05.png", cv2.IMREAD_GRAYSCALE)
+_, cmedial = cv2.threshold(im, 127, 255, cv2.THRESH_BINARY)
+med_img = img_as_ubyte(medial)  # Convert to 8-bit uint.
+med_contours, _ = cv2.findContours(
+    med_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+cv2.drawContours(rgb, med_contours, -1, (255, 0, 0), 1)
+print(len(med_contours))
+
+gapspt = []
+gapept = []
+for i in range(len(med_contours)):
+    for j, v in enumerate(med_contours[i]):
+        if j % 40 == 0 and j > 0 and j < len(med_contours[i])/2:
+            px1 = med_contours[i][j+3][0][0]
+            py1 = med_contours[i][j+3][0][1]
+            px2 = med_contours[i][j-3][0][0]
+            py2 = med_contours[i][j-3][0][1]
+            orth = np.array([py1 - py2, px2 - px1]) * max(im.shape)
+            # black background
+            orth_img = np.zeros(crack.shape, dtype=np.uint8)
+            cv2.line(orth_img, v[0] + orth, v[0] -
+                     orth, color=255, thickness=1)
+            gap_img = cv2.bitwise_and(orth_img, crack)
+            # cv2.circle(img=rgb, center=(v[0]), radius=3, color=(125, 0, 255),thickness=2)
+            endp = endpoint(gap_img)
+            gap_ends = simplelength(endp)
+            if gap_ends != None:
+                vec = [gap_ends[0][0]-gap_ends[1][0],
+                       gap_ends[0][1]-gap_ends[1][1]]
+                if math.sqrt(vec[0]**2+vec[1]**2) < 70:
+                    cv2.line(rgb, gap_ends[0], gap_ends[1],
+                             color=(0, 0, 255), thickness=1)
+                    gapspt.append(gap_ends[0])
+                    gapept.append(gap_ends[1])
+                    print(gap_ends)
+
+cv2.imwrite("width05.png", rgb)
+np.savetxt('spt05.csv', gapspt, delimiter=",")
+np.savetxt('ept05.csv', gapept, delimiter=",")
